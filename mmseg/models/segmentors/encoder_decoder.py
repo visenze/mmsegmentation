@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import mmcv
+import os
 
 from mmseg.core import add_prefix
 from mmseg.ops import resize
@@ -35,6 +37,9 @@ class EncoderDecoder(BaseSegmentor):
 
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
+
+        if self.test_cfg.get('fg_thres', None) and decode_head.num_classes != 2:
+            raise ValueError('Threshold is only available for binary outputs.')
 
         self.init_weights(pretrained=pretrained)
 
@@ -253,7 +258,12 @@ class EncoderDecoder(BaseSegmentor):
             seg_logit = self.slide_inference(img, img_meta, rescale)
         else:
             seg_logit = self.whole_inference(img, img_meta, rescale)
-        output = F.softmax(seg_logit, dim=1)
+
+        if self.test_cfg.get('fg_thres', None):
+            output = torch.sigmoid(seg_logit)
+        else:
+            output = F.softmax(seg_logit, dim=1)
+
         flip = img_meta[0]['flip']
         if flip:
             flip_direction = img_meta[0]['flip_direction']
@@ -268,7 +278,15 @@ class EncoderDecoder(BaseSegmentor):
     def simple_test(self, img, img_meta, rescale=True):
         """Simple test with single image."""
         seg_logit = self.inference(img, img_meta, rescale)
-        seg_pred = seg_logit.argmax(dim=1)
+        if self.test_cfg.get('fg_thres', None):
+            fg_cs = seg_logit[:, 1]
+            # If the confidence score of class > threshold, then keep the threshold, otherwise 
+            ones = torch.ones_like(fg_cs)
+            zeros = torch.zeros_like(fg_cs)
+            seg_pred = torch.where(fg_cs >= self.test_cfg['fg_thres'], ones, zeros)
+        else:
+            seg_pred = seg_logit.argmax(dim=1)
+
         if torch.onnx.is_in_onnx_export():
             # our inference backend only support 4D output
             seg_pred = seg_pred.unsqueeze(0)
