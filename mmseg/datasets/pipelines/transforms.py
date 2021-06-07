@@ -2,6 +2,10 @@ import mmcv
 import numpy as np
 from mmcv.utils import deprecated_api_warning, is_tuple_of
 from numpy import random
+from PIL import Image
+import glob
+import os
+import cv2
 
 from ..builder import PIPELINES
 
@@ -887,3 +891,91 @@ class PhotoMetricDistortion(object):
                      f'{self.saturation_upper}), '
                      f'hue_delta={self.hue_delta})')
         return repr_str
+
+@PIPELINES.register_module()
+class BackgroundReplace(object):
+    """Replace the background in the original image with other background.
+
+    Require keys: ['img', 'seg_fields']
+
+    Args:
+        background_folder (Path): The path to folder contains replacement background
+        toy_list (Path): Path to txt file contains toy filename. We only replace background for toy data
+    """
+
+    def __init__(self, background_folder, prob=0.5, toy_list=None):
+        self.background_folder = background_folder
+        self.prob = prob
+        if prob is not None:
+            assert prob >= 0 and prob <= 1
+
+        self.bg_imgs = glob.glob(os.path.join(self.background_folder, '*'))
+
+        self.toys = self._read_toy_list(toy_list) if toy_list else None
+
+    def _read_toy_list(self, toy_list):
+        toys = set()
+        with open(toy_list, 'r') as f:
+            for line in f.readlines():
+                line = line.strip()
+                if not line: continue
+                toys.add(line)
+        return toys
+
+
+
+    def _replace_bg(self, img, seg, bg):
+
+        # Use segmentation mask as alpha channel
+        alpha = np.where(seg > 0, 255, 0)
+        alpha = cv2.blur(alpha, (5, 5))
+        alpha = alpha[...,  np.newaxis].astype(np.uint8)
+
+        rgba_img = np.concatenate([img, alpha], axis = 2)
+        rgba_img = Image.fromarray(rgba_img, 'RGBA')
+
+        # Blend new background
+        (width, height) = (rgba_img.width, rgba_img.height)
+        bg = bg.resize((width, height))
+
+        new_bg_img = Image.alpha_composite(bg, rgba_img)
+
+        # Convert back to BGR image
+
+        new_bg_img = np.array(new_bg_img.convert('RGB'))
+        new_bg_img = new_bg_img[..., ::-1]  # RGB -> BGR
+
+        return new_bg_img
+
+
+    def __call__(self, results):
+        """Call function to randomly replace the original background with new backgrounds
+
+        Args:
+            results (dict): Result dict from loading pipeline.
+
+        Returns:
+            dict: Result dict in which the origial image is replaced with new image
+        """
+
+        if self.toys:
+            filename = results['ori_filename'].rsplit('.', 1)[0]
+            if filename not in self.toys:
+                return results
+
+        new_bg = True if np.random.rand() < self.prob else False
+        if new_bg:
+            bg = np.random.choice(self.bg_imgs, 1)[0]
+            bg = Image.open(bg).convert('RGBA')
+            seg = results[results['seg_fields'][0]]
+            img = results['img']
+
+            img = img[..., ::-1] # BGR -> RGB
+
+            new_bg_img = self._replace_bg(img, seg, bg)
+            results['img'] = new_bg_img
+
+        return results
+
+    def __repr__(self):
+        return self.__class__.__name__ + f'(background_folder={self.background_folder})'
