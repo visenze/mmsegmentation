@@ -1,3 +1,4 @@
+import cv2
 import argparse
 import os
 
@@ -8,9 +9,10 @@ from mmcv.runner import (get_dist_info, init_dist, load_checkpoint,
                          wrap_fp16_model)
 from mmcv.utils import DictAction
 
-from mmseg.apis import multi_gpu_test, single_gpu_test
+from mmseg.apis import multi_gpu_test, single_gpu_test, single_gpu_inference, multi_gpu_inference
 from mmseg.datasets import build_dataloader, build_dataset
 from mmseg.models import build_segmentor
+from mmseg.apis import save_seg_result
 
 
 def parse_args():
@@ -18,6 +20,8 @@ def parse_args():
         description='mmseg test (and eval) a model')
     parser.add_argument('config', help='test config file path')
     parser.add_argument('checkpoint', help='checkpoint file')
+    parser.add_argument('--img_dir', help='path to input directory')
+    parser.add_argument('--thres', type=float,  help='Output threshold')
     parser.add_argument(
         '--aug-test', action='store_true', help='Use Flip and Multi scale aug')
     parser.add_argument('--out', help='output result file in pickle format')
@@ -80,8 +84,8 @@ def main():
     if args.eval and args.format_only:
         raise ValueError('--eval and --format_only cannot be both specified')
 
-    if args.out is not None and not args.out.endswith(('.pkl', '.pickle')):
-        raise ValueError('The output file must be a pkl file.')
+    # if args.out is not None and not args.out.endswith(('.pkl', '.pickle')):
+    #     raise ValueError('The output file must be a pkl file.')
 
     cfg = mmcv.Config.fromfile(args.config)
     if args.options is not None:
@@ -97,6 +101,7 @@ def main():
         cfg.data.test.pipeline[1].flip = True
     cfg.model.pretrained = None
     cfg.data.test.test_mode = True
+    cfg.data.test.img_dir = args.img_dir
 
     # init distributed env first, since logger depends on the dist info.
     if args.launcher == 'none':
@@ -117,7 +122,10 @@ def main():
 
     # build the model and load checkpoint
     cfg.model.train_cfg = None
-    model = build_segmentor(cfg.model, test_cfg=cfg.get('test_cfg'))
+    test_cfg = cfg.get('test_cfg')
+    if args.thres:
+        test_cfg.fg_thres = args.thres
+    model = build_segmentor(cfg.model, test_cfg=test_cfg)
     fp16_cfg = cfg.get('fp16', None)
     if fp16_cfg is not None:
         wrap_fp16_model(model)
@@ -131,21 +139,22 @@ def main():
 
     if not distributed:
         model = MMDataParallel(model, device_ids=[0])
-        outputs = single_gpu_test(model, data_loader, args.show, args.show_dir,
+        outputs = single_gpu_inference(model, data_loader, args.show, args.show_dir,
                                   efficient_test, args.opacity)
     else:
         model = MMDistributedDataParallel(
             model.cuda(),
             device_ids=[torch.cuda.current_device()],
             broadcast_buffers=False)
-        outputs = multi_gpu_test(model, data_loader, args.tmpdir,
+        outputs = multi_gpu_inference(model, data_loader, args.tmpdir,
                                  args.gpu_collect, efficient_test)
 
     rank, _ = get_dist_info()
     if rank == 0:
         if args.out:
             print(f'\nwriting results to {args.out}')
-            mmcv.dump(outputs, args.out)
+            save_seg_result(outputs, args.out)
+            # mmcv.dump(outputs, args.out)
         kwargs = {} if args.eval_options is None else args.eval_options
         if args.format_only:
             dataset.format_results(outputs, **kwargs)
