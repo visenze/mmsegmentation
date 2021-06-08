@@ -10,11 +10,13 @@ from .pascal_context import PascalContextDataset, PascalContextDataset59
 from .stare import STAREDataset
 from .voc import PascalVOCDataset
 from .toy import ToyDataset
+from .hv import HydraVisionDataset
+from .toy_hv import ToyHVDataset
 
 __all__ = [
     'CustomDataset', 'build_dataloader', 'ConcatDataset', 'RepeatDataset',
     'DATASETS', 'build_dataset', 'PIPELINES', 'CityscapesDataset',
     'PascalVOCDataset', 'ADE20KDataset', 'PascalContextDataset',
     'PascalContextDataset59', 'ChaseDB1Dataset', 'DRIVEDataset', 'HRFDataset',
-    'STAREDataset', 'ToyDataset'
+    'STAREDataset', 'ToyDataset', "ToyHVDataset"
 ]
