@@ -6,6 +6,8 @@ from PIL import Image
 import glob
 import os
 import cv2
+from data_factory.magikarp import read_vis
+import data_factory.client.hydravision as hv
 
 from ..builder import PIPELINES
 
@@ -899,19 +901,23 @@ class BackgroundReplace(object):
     Require keys: ['img', 'seg_fields']
 
     Args:
-        background_folder (Path): The path to folder contains replacement background
-        toy_list (Path): Path to txt file contains toy filename. We only replace background for toy data
+        bg_dataset (Path): The path to folder contains replacement background
     """
 
-    def __init__(self, background_folder, prob=0.5, toy_list=None):
-        self.background_folder = background_folder
+    def __init__(self, bg_dataset, prob=0.5):
+        self.bg_dataset = bg_dataset
+
         self.prob = prob
         if prob is not None:
-            assert prob >= 0 and prob <= 1
+            assert 0 <= prob <= 1
 
-        self.bg_imgs = glob.glob(os.path.join(self.background_folder, '*'))
+        self.bg_imgs = self._load_imgs_uri(self.bg_dataset)
 
-        self.toys = self._read_toy_list(toy_list) if toy_list else None
+
+    def _load_imgs_uri(self, ds):
+        df = hv.HydraVisionGetDataset(dataset_name=ds).read_dataframe()
+        img_uri = df.vis_uri.to_list()
+        return img_uri
 
     def _read_toy_list(self, toy_list):
         toys = set()
@@ -921,8 +927,6 @@ class BackgroundReplace(object):
                 if not line: continue
                 toys.add(line)
         return toys
-
-
 
     def _replace_bg(self, img, seg, bg):
 
@@ -958,18 +962,18 @@ class BackgroundReplace(object):
             dict: Result dict in which the origial image is replaced with new image
         """
 
-        if self.toys:
-            filename = results['ori_filename'].rsplit('.', 1)[0]
-            if filename not in self.toys:
-                return results
-
         new_bg = True if np.random.rand() < self.prob else False
         if new_bg:
-            bg = np.random.choice(self.bg_imgs, 1)[0]
-            bg = Image.open(bg).convert('RGBA')
-            seg = results[results['seg_fields'][0]]
-            img = results['img']
 
+            bg_uri = np.random.choice(self.bg_imgs, 1)[0]
+            bg_bytes = read_vis(bg_uri, silent=True)
+            bg = mmcv.imfrombytes(bg_bytes)
+            bg = mmcv.bgr2rgb(bg)
+            bg = Image.fromarray(bg).convert('RGBA')
+
+            seg = results[results['seg_fields'][0]]
+
+            img = results['img']
             img = img[..., ::-1] # BGR -> RGB
 
             new_bg_img = self._replace_bg(img, seg, bg)
@@ -977,5 +981,10 @@ class BackgroundReplace(object):
 
         return results
 
+
     def __repr__(self):
-        return self.__class__.__name__ + f'(background_folder={self.background_folder})'
+        repr_str = self.__class__.__name__
+        repr_str += f"(bg_dataset={self.bg_dataset},"
+        repr_str += f"prob='{self.prob}')"
+        return repr_str
+
