@@ -1,5 +1,5 @@
-comment = "V2 (Only) White & Black BG Crop & Green +  Load from DUTS-Full + Test training with HV "
-exp_name = "run55"
+comment = "V2 (Only) White & Black BG Crop & Green + BG AUG +  Load from DUTS-Full + Test training with HV "
+exp_name = "run56"
 
 # model settings
 class_weight = None
@@ -70,10 +70,7 @@ crop_size = (512, 512)
 train_pipeline = [
     dict(type="LoadImageFromHV"),
     dict(type="LoadAnnotationsHV"),
-    # dict(type='BackgroundReplace',
-    #     background_folder='/mnt/raid_04/usr/tam.le/data/ferrero_toys/bg_images/toy84_dist_var_may18_crop/',
-    # toy_list='/home/tam.le/raid_04/data/ferrero_toys/84_v2_valid/toy_list_with_black.txt',
-    # prob=0.4),
+    dict(type='BackgroundReplace', bg_dataset='goldenlaunch_train_aug_background', prob=0.4),
     dict(type="Resize", img_scale=(2048, 512), ratio_range=(0.5, 2.0)),
     dict(type="RandomCrop", crop_size=crop_size, cat_max_ratio=0.75),
     dict(type="RandomFlip", prob=0.5),
@@ -126,7 +123,7 @@ data = dict(
         mask_dataset="goldenlaunch_64_val_black_mask",
         pipeline=test_pipeline,
     ),
-    test=dict(type=dataset_type, pipeline=test_pipeline),
+    test=dict(type=dataset_type,crop=True, pipeline=test_pipeline),
 )
 
 
