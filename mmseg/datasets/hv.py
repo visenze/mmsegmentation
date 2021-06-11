@@ -55,20 +55,29 @@ class HydraVisionDataset(CustomDataset):
             ).read_dataframe()
             raw_mask_mapping = self._load_raw_mask_mapping(mask_df)
 
+            # Validate all raw data have corresponding mask
+            miss_mask = set(raw_df.vis_uri.to_list()) - set(raw_mask_mapping.keys())
+            if len(miss_mask):
+                raise ValueError(
+                    f"{len(miss_mask)} images don't have corresponding mask. Please check the datasets"
+                )
+
         img_infos = [
             dict(filename=uri, box=parse_box_str(box), crop=self.crop)
             for uri, box in zip(raw_df["vis_uri"], raw_df["box"])
         ]
 
-        img_with_no_box = 0
-
         if self.mask_dataset:
+            for img_info in img_infos:
+                raw_uri = img_info["filename"]
+                img_info["ann"] = dict(seg_map=raw_mask_mapping[raw_uri])
+
+        img_with_no_box = 0
+        if self.crop:
             for img_info in img_infos:
                 raw_uri = img_info["filename"]
                 if img_info["box"] is None:
                     img_with_no_box += 1
-
-                img_info["ann"] = dict(seg_map=raw_mask_mapping[raw_uri])
 
         print_log(f"Loaded {len(img_infos)} images", logger=get_root_logger())
         if img_with_no_box > 0:
