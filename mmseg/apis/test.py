@@ -20,7 +20,7 @@ def save_seg_result(results, out_folder):
         seg = np.array(seg).squeeze()
         seg = (seg * 255).astype(np.uint8)
 
-        # Saving as JPG changes the image
+        # Saving mask with lossless format
         out_file = osp.join(out_folder, filename.rsplit(".", 1)[0] + ".png")
         mmcv.imwrite(seg, out_file)
         prog_bar.update()
