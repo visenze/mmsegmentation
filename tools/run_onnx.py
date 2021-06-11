@@ -1,4 +1,5 @@
 """Run ONNX Segmentation model."""
+import argparse
 import cv2
 import data_factory.client.hydravision as hv
 import glob
@@ -134,6 +135,7 @@ class ONNXRunner:
     def save_output(self, input_img, pred_mask, output):
         raise NotImplementedError
 
+
 class MissingBoxError(Exception):
     pass
 
@@ -164,19 +166,14 @@ class LocalONNXRunner(ONNXRunner):
 
         return imgpath_box
 
-    def process(self, folder, output, box_ref_dataset=None):
+    def process(self, folder, output, use_box):
 
         if osp.isdir(folder):
             input_imgs = glob.glob(osp.join(folder, "*"))
         else:
             raise ValueError(f"{folder} not exist.")
 
-        if box_ref_dataset:
-            box_mapping = self._get_box_mapping(input_imgs, box_ref_dataset)
-        else:
-            box_mapping = None
-
-        super().process(input_imgs, output, box_mapping)
+        super().process(input_imgs, output, box_mapping=None)
 
     def save_output(self, img_path, mask, output_folder):
         out_filename = osp.basename(img_path).rsplit(".", 1)[0] + ".png"
@@ -224,20 +221,53 @@ class HVONNXRunner(ONNXRunner):
         mmcv.imwrite(mask, out_path)
 
 
-def run_onnx():
-    onnx_model = "./tmp.onnx"
-
-    # onnx_runner = LocalONNXRunner(
-    #     model=onnx_model, input_size=INPUT_SIZE, mean=IMG_NORM_MEAN, std=IMG_NORM_STD
-    # )
-
-    onnx_runner = HVONNXRunner(
-        model=onnx_model, input_size=INPUT_SIZE, mean=IMG_NORM_MEAN, std=IMG_NORM_STD
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run ONNX Segmentation model")
+    parser.add_argument("model", help="ONNX model file")
+    parser.add_argument(
+        "--source", choices=["hv", "local"], required=True, help="Source of dataset"
     )
+    parser.add_argument(
+        "--inp",
+        required=True,
+        help="Path to input folder in local model or Hydravision dataset name in HV mode",
+    )
+    parser.add_argument("--out", required=True, help="output folder")
 
-    # dataset = "/mnt/raid_04/usr/tam.le/data/ferrero_toys/goldenlaunch_test_black_vs_white/raw/"
-    dataset = "goldenlaunch_test_black_vs_white_raw"
-    onnx_runner.process(dataset, "./test_onnx", use_box=True)
+    parser.add_argument(
+        "--use-box",
+        action="store_true",
+        help="Use provided box to crop image. Only support in Hydravision mode",
+    )
+    args = parser.parse_args()
+
+    if args.source == "local" and args.use_box:
+        raise ValueError(
+            "Cropping is not supported for local data. The flag '--use-box' will have no effect"
+        )
+
+    return args
+
+
+def run_onnx():
+    args = parse_args()
+
+    if args.source == "hv":
+        onnx_runner = HVONNXRunner(
+            model=args.model,
+            input_size=INPUT_SIZE,
+            mean=IMG_NORM_MEAN,
+            std=IMG_NORM_STD,
+        )
+    elif args.source == "local":
+        onnx_runner = LocalONNXRunner(
+            model=args.model,
+            input_size=INPUT_SIZE,
+            mean=IMG_NORM_MEAN,
+            std=IMG_NORM_STD,
+        )
+
+    onnx_runner.process(args.inp, args.out, use_box=args.use_box)
 
 
 if __name__ == "__main__":
