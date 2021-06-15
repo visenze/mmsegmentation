@@ -3,16 +3,15 @@ import argparse
 import cv2
 import data_factory.client.hydravision as hv
 import glob
-import mmcv
 import numpy as np
 import onnx
 import onnxruntime as rt
+import os
 import os.path as osp
 from abc import abstractmethod
 from data_factory.magikarp import read_vis
 from tqdm.auto import tqdm
 
-INPUT_SIZE = (2048, 512)
 IMG_NORM_MEAN = [123.675, 116.28, 103.53]
 IMG_NORM_STD = [58.395, 57.12, 57.375]
 
@@ -20,10 +19,11 @@ IMG_NORM_STD = [58.395, 57.12, 57.375]
 def load_img(filename, box=None):
 
     if osp.isfile(filename):
-        img = mmcv.imread(filename)
+        img = cv2.imread(filename, cv2.IMREAD_COLOR)
     else:
         img_bytes = read_vis(filename, silent=True)
-        img = mmcv.imfrombytes(img_bytes)
+        img_np = np.frombuffer(img_bytes, np.uint8)
+        img = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
 
     if box is not None:
         xmin, ymin, xmax, ymax = box
@@ -42,12 +42,22 @@ def parse_box_str(box_str):
 
 
 class ONNXRunner:
-    def __init__(self, model, input_size, mean, std):
-        self.model = model
-        self.input_size = input_size
+    def __init__(self, model, mean, std):
+        self.model_file = model
+        self.onnx_model = onnx.load(model)
+        self.input_size = self._get_input_shape(self.onnx_model)
         self.mean = np.array(mean, dtype=np.float32)
         self.std = np.array(std, dtype=np.float32)
-        self.sess = rt.InferenceSession(self.model)
+
+        sess_options = rt.SessionOptions()
+        sess_options.graph_optimization_level = rt.GraphOptimizationLevel.ORT_ENABLE_ALL
+        self.sess = rt.InferenceSession(self.model_file, sess_options)
+
+    def _get_input_shape(self, model):
+        tensor_type = model.graph.input[0].type.tensor_type
+        height = tensor_type.shape.dim[2].dim_value
+        width = tensor_type.shape.dim[3].dim_value
+        return (height, width)
 
     def _process(self, input_path, box=None):
 
@@ -58,7 +68,9 @@ class ONNXRunner:
         self._pre_process(data, self.input_size, self.mean, self.std)
 
         input_name = self.sess.get_inputs()[0].name
-        data["result"] = self.sess.run(None, {input_name: data["img"]})[0][0]
+        img = data["img"]
+
+        data["result"] = self.sess.run(None, {input_name: img})[0][0]
 
         self._post_process(data)
 
@@ -68,11 +80,16 @@ class ONNXRunner:
 
         img = data["orig_img"]
 
-        # 1. Rescale image keeping the ratio
-        img_resize = mmcv.imrescale(img, input_size)
+        # 1. Resize image
+        img_resize = cv2.resize(img, input_size, interpolation=cv2.INTER_LINEAR)
 
         # 2. Normalize Image
-        norm_img = mmcv.imnormalize(img_resize, mean, std, to_rgb=True)
+        norm_img = img_resize.copy().astype(np.float32)
+        mean = np.float64(mean.reshape(1, -1))
+        stdinv = 1 / np.float64(std.reshape(1, -1))
+        cv2.cvtColor(norm_img, cv2.COLOR_BGR2RGB, norm_img)  # inplace
+        cv2.subtract(norm_img, mean, norm_img)  # inplace
+        cv2.multiply(norm_img, stdinv, norm_img)  # inplace
 
         # 3. HWC -> CHW
         norm_img = np.moveaxis(norm_img, -1, 0)
@@ -90,17 +107,17 @@ class ONNXRunner:
         # CHW -> HWC
         result = np.moveaxis(result, 0, -1)
 
-        # TODO: Use the palette instead. This only work for binary case
-        result = result * 255
-
         # In the pytorch model, resizing step is performed on the logit map
         # and bilinear interpolation is used.
         # Therefore, the output is expected to be slightly different.
-        post_result = mmcv.imresize(
+        post_result = cv2.resize(
             result.astype(np.uint8),
             (orig_shape[1], orig_shape[0]),
-            interpolation="nearest",
+            interpolation=cv2.INTER_LINEAR,
         )
+
+        # TODO: Use the palette instead. This only work for binary case
+        post_result = post_result * 255
 
         data["post_result"] = post_result
 
@@ -117,19 +134,6 @@ class ONNXRunner:
             pred_mask = result["post_result"]
 
             self.save_output(input_img, pred_mask, output)
-
-            # # How to define the output name
-            # if osp.isdir(dataset):
-            #     # Local dataset
-            #     out_filename = osp.basename(input_img).rsplit(".", 1)[0] + ".png"
-            # else:
-            #     # HydraVisionDataset
-            #     out_filename = input_img + ".png"
-
-            # out_path = osp.join(output, out_filename)
-
-            # # Saving output
-            # mmcv.imwrite(pred_mask, out_path)
 
     @abstractmethod
     def save_output(self, input_img, pred_mask, output):
@@ -178,8 +182,9 @@ class LocalONNXRunner(ONNXRunner):
     def save_output(self, img_path, mask, output_folder):
         out_filename = osp.basename(img_path).rsplit(".", 1)[0] + ".png"
         out_path = osp.join(output_folder, out_filename)
-        # Saving output
-        mmcv.imwrite(mask, out_path)
+        if not osp.exists(output_folder):
+            os.makedirs(output_folder, exist_ok=False)
+        cv2.imwrite(out_path, mask)
 
 
 class HVONNXRunner(ONNXRunner):
@@ -217,8 +222,9 @@ class HVONNXRunner(ONNXRunner):
     def save_output(self, img_uri, mask, output_folder):
         out_filename = img_uri + ".png"
         out_path = osp.join(output_folder, out_filename)
-        # Saving output
-        mmcv.imwrite(mask, out_path)
+        if not osp.exists(output_folder):
+            os.makedirs(output_folder, exist_ok=False)
+        cv2.imwrite(out_path, mask)
 
 
 def parse_args():
@@ -255,14 +261,12 @@ def run_onnx():
     if args.source == "hv":
         onnx_runner = HVONNXRunner(
             model=args.model,
-            input_size=INPUT_SIZE,
             mean=IMG_NORM_MEAN,
             std=IMG_NORM_STD,
         )
     elif args.source == "local":
         onnx_runner = LocalONNXRunner(
             model=args.model,
-            input_size=INPUT_SIZE,
             mean=IMG_NORM_MEAN,
             std=IMG_NORM_STD,
         )
