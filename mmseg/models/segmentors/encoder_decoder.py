@@ -38,9 +38,6 @@ class EncoderDecoder(BaseSegmentor):
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
 
-        if self.test_cfg.get('fg_thres', None) and decode_head.num_classes != 2:
-            raise ValueError('Threshold is only available for binary outputs.')
-
         self.init_weights(pretrained=pretrained)
 
         assert self.with_decode_head
@@ -278,14 +275,7 @@ class EncoderDecoder(BaseSegmentor):
     def simple_test(self, img, img_meta, rescale=True):
         """Simple test with single image."""
         seg_logit = self.inference(img, img_meta, rescale)
-        if self.test_cfg.get('fg_thres', None):
-            fg_cs = seg_logit[:, 1]
-            # If the confidence score of class > threshold, then keep the threshold, otherwise 
-            ones = torch.ones_like(fg_cs)
-            zeros = torch.zeros_like(fg_cs)
-            seg_pred = torch.where(fg_cs >= self.test_cfg['fg_thres'], ones, zeros)
-        else:
-            seg_pred = seg_logit.argmax(dim=1)
+        seg_pred = seg_logit.argmax(dim=1)
 
         if torch.onnx.is_in_onnx_export():
             # our inference backend only support 4D output
