@@ -1,2 +1,4 @@
 cityscapesscripts
 tensorboard
+onnx
+onnxruntime
