@@ -1,5 +1,5 @@
-comment = "V2 (Only) White & Black BG Crop & Green + BG AUG +  Load from DUTS-Full + Test training with HV "
-exp_name = "run56"
+comment = "V2 (Only) White & Black BG Crop & Green + BG AUG +  Load from DUTS-Full "
+exp_name = "_debug"
 
 # model settings
 class_weight = None
@@ -70,7 +70,7 @@ crop_size = (512, 512)
 train_pipeline = [
     dict(type="LoadImageFromHV"),
     dict(type="LoadAnnotationsHV"),
-    dict(type='BackgroundReplace', bg_dataset='goldenlaunch_train_aug_background', prob=0.4),
+    dict(type='BackgroundReplace', bg_dataset='goldenlaunch_train_augbg_black_green_material', prob=0.4),
     dict(type="Resize", img_scale=(2048, 512), ratio_range=(0.5, 2.0)),
     dict(type="RandomCrop", crop_size=crop_size, cat_max_ratio=0.75),
     dict(type="RandomFlip", prob=0.5),
@@ -135,7 +135,7 @@ lr_config = dict(policy="poly", power=0.9, min_lr=1e-4, by_epoch=False)
 # runtime settings
 runner = dict(type="IterBasedRunner", max_iters=40000)
 checkpoint_config = dict(by_epoch=False, interval=4000)
-evaluation = dict(interval=4000, metric="mIoU")
+evaluation = dict(interval=300, metric="mIoU")
 
 
 # yapf:disable
