@@ -380,6 +380,13 @@ class CustomDataset(Dataset):
         print_log('Summary:', logger)
         print_log('\n' + summary_table_data.get_string(), logger=logger)
 
+        if kwargs['eval_out']:
+            with open(kwargs['eval_out'], 'w') as f:
+                f.write('Per class results:')
+                f.write('\n' + class_table_data.get_string())
+                f.write('\nSummary:')
+                f.write('\n' + summary_table_data.get_string())
+
         # each metric dict
         for key, value in ret_metrics_summary.items():
             if key == 'aAcc':
