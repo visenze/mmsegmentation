@@ -380,7 +380,7 @@ class CustomDataset(Dataset):
         print_log('Summary:', logger)
         print_log('\n' + summary_table_data.get_string(), logger=logger)
 
-        if kwargs['eval_out']:
+        if kwargs.get('eval_out', None):
             with open(kwargs['eval_out'], 'w') as f:
                 f.write('Per class results:')
                 f.write('\n' + class_table_data.get_string())
