@@ -19,4 +19,4 @@ CHECKPOINT=$2
 PORT=${PORT:-29500}
 PYTHONPATH="$(dirname $0)/..":$PYTHONPATH \
 python -m torch.distributed.launch --nproc_per_node=$NUMGPUS --master_port=$PORT \
-    $(dirname "$0")/test.py $CONFIG $CHECKPOINT --launcher pytorch ${@:3}
+    $(dirname "$0")/inference.py  $CONFIG $CHECKPOINT --launcher pytorch ${@:3}

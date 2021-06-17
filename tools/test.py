@@ -20,11 +20,10 @@ def parse_args():
         description='mmseg test (and eval) a model')
     parser.add_argument('config', help='test config file path')
     parser.add_argument('checkpoint', help='checkpoint file')
-    parser.add_argument('--img_dir', help='path to input directory')
-    parser.add_argument('--thres', type=float,  help='Output threshold')
     parser.add_argument(
         '--aug-test', action='store_true', help='Use Flip and Multi scale aug')
     parser.add_argument('--out', help='output result file in pickle format')
+    parser.add_argument('--eval-out', help='output text file storing evaluation result')
     parser.add_argument(
         '--format-only',
         action='store_true',
@@ -75,11 +74,11 @@ def parse_args():
 def main():
     args = parse_args()
 
-    assert args.out or args.eval or args.format_only or args.show \
-        or args.show_dir, \
-        ('Please specify at least one operation (save/eval/format/show the '
-         'results / save the results) with the argument "--out", "--eval"'
-         ', "--format-only", "--show" or "--show-dir"')
+    # assert args.out or args.eval or args.format_only or args.show \
+    #     or args.show_dir, \
+    #     ('Please specify at least one operation (save/eval/format/show the '
+    #      'results / save the results) with the argument "--out", "--eval"'
+    #      ', "--format-only", "--show" or "--show-dir"')
 
     if args.eval and args.format_only:
         raise ValueError('--eval and --format_only cannot be both specified')
@@ -101,7 +100,6 @@ def main():
         cfg.data.test.pipeline[1].flip = True
     cfg.model.pretrained = None
     cfg.data.test.test_mode = True
-    cfg.data.test.img_dir = args.img_dir
 
     # init distributed env first, since logger depends on the dist info.
     if args.launcher == 'none':
@@ -123,8 +121,6 @@ def main():
     # build the model and load checkpoint
     cfg.model.train_cfg = None
     test_cfg = cfg.get('test_cfg')
-    if args.thres:
-        test_cfg.fg_thres = args.thres
     model = build_segmentor(cfg.model, test_cfg=test_cfg)
     fp16_cfg = cfg.get('fp16', None)
     if fp16_cfg is not None:
@@ -139,26 +135,27 @@ def main():
 
     if not distributed:
         model = MMDataParallel(model, device_ids=[0])
-        outputs = single_gpu_inference(model, data_loader, args.show, args.show_dir,
+        outputs = single_gpu_test(model, data_loader, args.show, args.show_dir,
                                   efficient_test, args.opacity)
     else:
         model = MMDistributedDataParallel(
             model.cuda(),
             device_ids=[torch.cuda.current_device()],
             broadcast_buffers=False)
-        outputs = multi_gpu_inference(model, data_loader, args.tmpdir,
+        outputs = multi_gpu_test(model, data_loader, args.tmpdir,
                                  args.gpu_collect, efficient_test)
 
     rank, _ = get_dist_info()
     if rank == 0:
         if args.out:
             print(f'\nwriting results to {args.out}')
-            save_seg_result(outputs, args.out)
-            # mmcv.dump(outputs, args.out)
+            mmcv.dump(outputs, args.out)
         kwargs = {} if args.eval_options is None else args.eval_options
         if args.format_only:
             dataset.format_results(outputs, **kwargs)
         if args.eval:
+            if args.eval_out:
+                kwargs['eval_out'] = args.eval_out
             dataset.evaluate(outputs, args.eval, **kwargs)
 
 
