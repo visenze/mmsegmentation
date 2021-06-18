@@ -1,8 +1,7 @@
-comment = "V2 (Only) White & Black BG Crop & Green + BG AUG +  Load from DUTS-Full + Test training with HV "
-exp_name = "run56"
+comment = "(Local) Stage 2 Train with Remove.bg Toy data"
+exp_name = "stage_2_local"
 
 # model settings
-class_weight = None
 norm_cfg = dict(type="BN", requires_grad=True)
 model = dict(
     type="EncoderDecoder",
@@ -35,7 +34,7 @@ model = dict(
             type="CrossEntropyLoss",
             use_sigmoid=False,
             loss_weight=1.0,
-            class_weight=class_weight,
+            class_weight=None,
         ),
     ),
     auxiliary_head=dict(
@@ -53,7 +52,7 @@ model = dict(
             type="CrossEntropyLoss",
             use_sigmoid=False,
             loss_weight=0.4,
-            class_weight=class_weight,
+            class_weight=None,
         ),
     ),
     # model training and testing settings
@@ -62,15 +61,19 @@ model = dict(
 )
 
 # dataset settings
-dataset_type = "ToyHVDataset"
+dataset_type = "ToyDataset"
 img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True
 )
 crop_size = (512, 512)
 train_pipeline = [
-    dict(type="LoadImageFromHV"),
-    dict(type="LoadAnnotationsHV"),
-    dict(type='BackgroundReplace', bg_dataset='goldenlaunch_train_aug_background', prob=0.4),
+    dict(type="LoadImageFromFile"),
+    dict(type="LoadAnnotations"),
+    dict(
+        type="BackgroundReplace",
+        bg_dataset="/mnt/raid_04/usr/tam.le/data/ferrero_toys/bg_images/black_green_material/",
+        prob=0.4,
+    ),
     dict(type="Resize", img_scale=(2048, 512), ratio_range=(0.5, 2.0)),
     dict(type="RandomCrop", crop_size=crop_size, cat_max_ratio=0.75),
     dict(type="RandomFlip", prob=0.5),
@@ -81,11 +84,10 @@ train_pipeline = [
     dict(type="Collect", keys=["img", "gt_semantic_seg"]),
 ]
 test_pipeline = [
-    dict(type="LoadImageFromHV"),
+    dict(type="LoadImageFromFile"),
     dict(
         type="MultiScaleFlipAug",
         img_scale=(2048, 512),
-        # img_ratios=[0.5, 1.0, 2.0],
         flip=False,
         transforms=[
             dict(type="Resize", keep_ratio=True),
@@ -97,33 +99,34 @@ test_pipeline = [
     ),
 ]
 
-train_data_root = "/home/tam.le/raid_04/data/ferrero_toys/84_v2_valid/train_v1_v2/"
-dutr_data_root = "/home/tam.le/raid_04/data/ferrero_toys/DUTS-TR/toy_train/crop_train/"
 sod_data_root = (
     "/home/tam.le/raid_04/data/ferrero_toys/sod_training/v2cleancrop_white_black_green/"
 )
 
 val_data_root = "/home/tam.le/raid_04/data/ferrero_toys/84_v2_valid/val/black_bg/crop/"
 
-test_data_root = "/home/tam.le/raid_04/data/ferrero_toys/84_v2_valid/test/"
 data = dict(
     samples_per_gpu=4,
     workers_per_gpu=4,
     train=dict(
         type=dataset_type,
-        crop=True,
-        raw_dataset="goldenlaunch_64_train_white_black_green_raw_remove_nobox",
-        mask_dataset="goldenlaunch_64_train_white_black_green_mask",
+        data_root=sod_data_root,
+        img_dir="raw",
+        ann_dir="mask",
         pipeline=train_pipeline,
     ),
     val=dict(
         type=dataset_type,
-        crop=True,
-        raw_dataset="goldenlaunch_64_val_black_raw",
-        mask_dataset="goldenlaunch_64_val_black_mask",
+        data_root=val_data_root,
+        img_dir="raw",
+        ann_dir="mask_semantic",
         pipeline=test_pipeline,
     ),
-    test=dict(type=dataset_type,crop=True, pipeline=test_pipeline),
+    test=dict(
+        type=dataset_type,
+        img_dir="/home/tam.le/raid_04/data/ferrero_toys/84_v2_valid/test/crop/raw",
+        pipeline=test_pipeline,
+    ),
 )
 
 
@@ -150,11 +153,7 @@ log_config = dict(
 # yapf:enable
 dist_params = dict(backend="nccl")
 log_level = "INFO"
-work_dir = (
-    f"/home/tam.le/raid_04/exp/ferrero_toys/semantic_seg/deeplabv3plus_r50/{exp_name}"
-)
+work_dir = f"./work_dir/{exp_name}"
 load_from = f"/home/tam.le/raid_04/exp/ferrero_toys/semantic_seg/deeplabv3plus_r50/run18/latest.pth"
-# load_from = "/mnt/ssfs/usr/tam.le/code/mmsegmentation/models/deeplabv3plus_r50-d8_512x512_40k_voc12aug_20200613_161759-e1b43aa9.pth"
-# load_from = "/mnt/ssfs/usr/tam.le/code/mmsegmentation/models/deeplabv3plus_r50-d8_512x512_160k_ade20k_20200615_124504-6135c7e0.pth"
 resume_from = None
 workflow = [("train", 1)]
