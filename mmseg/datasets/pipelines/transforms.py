@@ -910,7 +910,7 @@ class BackgroundReplace(object):
     Require keys: ['img', 'seg_fields']
 
     Args:
-        bg_dataset (Path): The path to folder contains replacement background
+        bg_dataset (Path): The path to folder contains replacement background or Hydravision dataset name
     """
 
     def __init__(self, bg_dataset, prob=0.5):
@@ -923,8 +923,11 @@ class BackgroundReplace(object):
         self.bg_imgs = self._load_imgs_uri(self.bg_dataset)
 
     def _load_imgs_uri(self, ds):
-        df = hv.HydraVisionGetDataset(dataset_name=ds).read_dataframe()
-        img_uri = df.vis_uri.to_list()
+        if os.path.isdir(ds):
+            img_uri = glob.glob(os.path.join(ds, '*'))
+        else:
+            df = hv.HydraVisionGetDataset(dataset_name=ds).read_dataframe()
+            img_uri = df.vis_uri.to_list()
         return img_uri
 
     def _read_toy_list(self, toy_list):
@@ -975,8 +978,11 @@ class BackgroundReplace(object):
         if new_bg:
 
             bg_uri = np.random.choice(self.bg_imgs, 1)[0]
-            bg_bytes = read_vis(bg_uri, silent=True)
-            bg = mmcv.imfrombytes(bg_bytes)
+            if os.path.isfile(bg_uri):
+                bg = mmcv.imread(bg_uri)
+            else:
+                bg_bytes = read_vis(bg_uri, silent=True)
+                bg = mmcv.imfrombytes(bg_bytes)
             bg = mmcv.bgr2rgb(bg)
             bg = Image.fromarray(bg).convert("RGBA")
 
