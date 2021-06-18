@@ -1,4 +1,6 @@
 import matplotlib.pyplot as plt
+import os
+
 import mmcv
 import torch
 from mmcv.parallel import collate, scatter
@@ -6,6 +8,7 @@ from mmcv.runner import load_checkpoint
 
 from mmseg.datasets.pipelines import Compose
 from mmseg.models import build_segmentor
+from data_factory.magikarp import read_vis
 
 
 def init_segmentor(config, checkpoint=None, device='cuda:0'):
@@ -59,7 +62,13 @@ class LoadImage:
         else:
             results['filename'] = None
             results['ori_filename'] = None
-        img = mmcv.imread(results['img'])
+        if os.path.isfile(results['img']):
+            # Local file
+            img = mmcv.imread(results['img'])
+        else:
+            # HydraVision
+            img_bytes = read_vis(results['img'], silent=True)
+            img = mmcv.imfrombytes(img_bytes)
         results['img'] = img
         results['img_shape'] = img.shape
         results['ori_shape'] = img.shape

@@ -309,7 +309,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Convert MMSeg to ONNX")
     parser.add_argument("config", help="test config file path")
     parser.add_argument("--checkpoint", help="checkpoint file", default=None)
-    parser.add_argument("--input-img", type=str, help="Images for input", default=None)
+    parser.add_argument(
+        "--input-img",
+        type=str,
+        help="Images for input. Path to local file or HydraVision URI",
+        default=None,
+    )
     parser.add_argument(
         "--show", action="store_true", help="show onnx graph and segmentation results"
     )
