@@ -5,7 +5,7 @@ exp_name = "stage2_toy"
 norm_cfg = dict(type="BN", requires_grad=True)
 model = dict(
     type="EncoderDecoder",
-    pretrained="open-mmlab://resnet50_v1c",
+    pretrained="/mnt/raid_04/usr/tam.le/exp/ferrero_toys/semantic_seg/deeplabv3plus_r50/resnet50_v1c-2cccc1ad.pth",
     backbone=dict(
         type="ResNetV1c",
         depth=50,
@@ -154,6 +154,6 @@ dist_params = dict(backend="nccl")
 log_level = "INFO"
 work_dir = f"./work_dir/{exp_name}"
 # Change this to the model you trained in stage 1. The default is also a stage 1 model, you can use it.
-load_from = "/mnt/raid_04/usr/tam.le/exp/ferrero_toys/semantic_seg/deeplabv3plus_r50/run18/iter_40000.pth"
+load_from = "/mnt/cephfs/workspace/tam.le/1u70mmeoQxUbORiw3FT3aMreeJ0/mmsegmentation/work_dir/stage_1_sod/iter_40000.pth"
 resume_from = None
 workflow = [("train", 1)]
