@@ -119,17 +119,21 @@ def single_gpu_test(model,
 
 
 def single_gpu_inference(model,
-                    data_loader,
-                    show=False,
-                    out_dir=None,
-                    efficient_test=False,
-                    opacity=0.5):
-    """Test with single GPU.
+                         data_loader,
+                         show=False,
+                         result_dir=None,
+                         out_dir=None,
+                         efficient_test=False,
+                         opacity=0.5):
+    """Inference with single GPU.
 
     Args:
         model (nn.Module): Model to be tested.
         data_loader (utils.data.Dataloader): Pytorch data loader.
         show (bool): Whether show results during inference. Default: False.
+        result_dir(str, optional): If specified, the segmentation prediction will be
+            dumped into this directory while the segmentation model is running instead of
+            keeping in a list. The returned list therefore will be empty.
         out_dir (str, optional): If specified, the results will be dumped into
             the directory to save output results.
         efficient_test (bool): Whether save the results as local numpy files to
@@ -151,10 +155,6 @@ def single_gpu_inference(model,
             img_metas = data['img_metas'][0].data[0]
             filename = img_metas[0]['ori_filename']
             # Put result in a list for consistency
-            result = [{
-                'filename': filename,
-                'seg': result
-            }]
 
         if show or out_dir:
             img_tensor = data['img'][0]
@@ -182,14 +182,27 @@ def single_gpu_inference(model,
                     out_file=out_file,
                     opacity=opacity)
 
-        if isinstance(result, list):
-            if efficient_test:
-                result = [np2tmp(_) for _ in result]
-            results.extend(result)
+        if result_dir is not None:
+            seg = np.array(result).squeeze()
+            seg = (seg * 255).astype(np.uint8)
+
+            # Saving mask with lossless format
+            out_file = osp.join(result_dir, filename.rsplit(".", 1)[0] + ".png")
+            mmcv.imwrite(seg, out_file)
         else:
-            if efficient_test:
-                result = np2tmp(result)
-            results.append(result)
+            result = [{
+                'filename': filename,
+                'seg': result
+            }]
+
+            if isinstance(result, list):
+                if efficient_test:
+                    result = [np2tmp(_) for _ in result]
+                results.extend(result)
+            else:
+                if efficient_test:
+                    result = np2tmp(result)
+                results.append(result)
 
         batch_size = len(result)
         for _ in range(batch_size):
@@ -199,11 +212,12 @@ def single_gpu_inference(model,
 
 
 def multi_gpu_inference(model,
-                   data_loader,
-                   tmpdir=None,
-                   gpu_collect=False,
-                   efficient_test=False):
-    """Test model with multiple gpus.
+                        data_loader,
+                        result_dir=None,
+                        tmpdir=None,
+                        gpu_collect=False,
+                        efficient_test=False):
+    """Inference model with multiple gpus.
 
     This method tests model with multiple gpus and collects the results
     under two different modes: gpu and cpu modes. By setting 'gpu_collect=True'
@@ -214,6 +228,9 @@ def multi_gpu_inference(model,
     Args:
         model (nn.Module): Model to be tested.
         data_loader (utils.data.Dataloader): Pytorch data loader.
+        result_dir(str, optional): If specified, the segmentation prediction will be
+            dumped into this directory while the segmentation model is running instead of
+            keeping in a list. The returned list therefore will be empty.
         tmpdir (str): Path of directory to save the temporary results from
             different gpus under cpu mode.
         gpu_collect (bool): Option to use either gpu or cpu to collect results.
@@ -236,20 +253,29 @@ def multi_gpu_inference(model,
 
         img_metas = data['img_metas'][0].data[0]
         filename = img_metas[0]['ori_filename']
-        # Put result in a list for consistency
-        result = [{
-            'filename': filename,
-            'seg': result
-        }]
+        if result_dir is not None:
+            # Save prediction mask to file to reduce memory usage
+            seg = np.array(result).squeeze()
+            seg = (seg * 255).astype(np.uint8)
 
-        if isinstance(result, list):
-            if efficient_test:
-                result = [np2tmp(_) for _ in result]
-            results.extend(result)
+            # Saving mask with lossless format
+            out_file = osp.join(result_dir, filename.rsplit(".", 1)[0] + ".png")
+            mmcv.imwrite(seg, out_file)
         else:
-            if efficient_test:
-                result = np2tmp(result)
-            results.append(result)
+            # Put result in a list for consistency
+            result = [{
+                'filename': filename,
+                'seg': result
+            }]
+
+            if isinstance(result, list):
+                if efficient_test:
+                    result = [np2tmp(_) for _ in result]
+                results.extend(result)
+            else:
+                if efficient_test:
+                    result = np2tmp(result)
+                results.append(result)
 
         if rank == 0:
             batch_size = len(result)
